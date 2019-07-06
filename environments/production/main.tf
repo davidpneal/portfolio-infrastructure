@@ -1,4 +1,4 @@
-#6/28/2019
+#7/6/2019
 #Tested to work with Terraform .11.11 - version .12.2 does not work as written
 
 #A simple website running on a load balanced platform with autoscaling
@@ -14,7 +14,7 @@ variable "public_ip" {}
 
 
 variable "environment_tag" {
-  default = "lab07"
+  default = "prod"
 }
 
 variable "network_address_space" {
@@ -39,7 +39,7 @@ variable "subnet_count" {
 
 #The subdomain name for this website, will be appended to the apex domain specified below
 variable "dns_subdomain" {
-  default = "lab"
+  default = "demo"
 }
 
 
@@ -56,7 +56,7 @@ provider "aws" {
 
 
 module "networking" {
-  source = "\\networking"
+  source = "..\\..\\modules\\networking"
 
   environment_tag       = "${var.environment_tag}"
   network_address_space = "${var.network_address_space}"
@@ -196,7 +196,7 @@ resource "aws_launch_configuration" "Launch-Config" {
   key_name               = "${var.keypair_name}"
 
   #User data takes the bootstrap script - documentation indicates this can be a cloud-init script or a standard shell script 
-  user_data = "${file("webserver-init.sh")}"
+  user_data = "${file("..\\webserver-init.sh")}"
 
   lifecycle {
     create_before_destroy = true #If changed, create the new LC before destroying the old one
