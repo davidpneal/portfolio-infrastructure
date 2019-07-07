@@ -37,22 +37,22 @@ variable "subnet_count" {
   default = 2
 }
 
-#The subdomain name for this website, will be appended to the apex domain specified below
-variable "dns_subdomain" {
-  default = "demo"
-}
-
-
-#Get the Route53 zone as this resource already exists in AWS
-data "aws_route53_zone" "primary" {
-  name = "davidpneal.com"
-}
-
-
 #Set provider
 provider "aws" {
   region = "us-east-1"
 }
+
+
+#The subdomain name for this site, will be appended to the apex domain specified below
+variable "dns_subdomain" {
+  default = "demo"
+}
+
+#The apex domain to publish the site under, this resource should already exist in Route53
+variable "dns_domain" {
+  default = "davidpneal.com"
+}
+
 
 
 module "networking" {
@@ -61,6 +61,15 @@ module "networking" {
   environment_tag       = "${var.environment_tag}"
   network_address_space = "${var.network_address_space}"
   subnet_count          = "${var.subnet_count}"
+}
+
+module "dns" {
+  source = "..\\..\\modules\\dns"
+
+  dns_domain    = "${var.dns_domain}"
+  dns_subdomain = "${var.dns_subdomain}"
+  lb_dns_name   = "${aws_lb.LoadBalancer.dns_name}"
+  lb_zone_id    = "${aws_lb.LoadBalancer.zone_id}"
 }
 
 
@@ -274,19 +283,4 @@ resource "aws_cloudwatch_metric_alarm" "Scale-Down-Alarm" {
 
   alarm_description = "EC2 Low CPU Utilization"
   alarm_actions     = ["${aws_autoscaling_policy.Scale-Down.arn}"]
-}
-
-
-
-#Alias the Load Balancer to a subdomain name
-resource "aws_route53_record" "alias_r53_elb" {
-  zone_id = "${data.aws_route53_zone.primary.zone_id}"
-  name    = "${var.dns_subdomain}"
-  type    = "A"
-
-  alias {
-    name                   = "${aws_lb.LoadBalancer.dns_name}"
-    zone_id                = "${aws_lb.LoadBalancer.zone_id}"
-    evaluate_target_health = true
-  }
 }
