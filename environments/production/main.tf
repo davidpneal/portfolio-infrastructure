@@ -1,10 +1,11 @@
-#7/6/2019
-#Tested to work with Terraform .11.11 - version .12.2 does not work as written
-
+#7/8/2019
 #A simple website running on a load balanced platform with autoscaling
-#Also publishes the Load Balancer address as a subdomain for easy access
-#Requires the keypair to already exist in AWS
+#Requires the keypair and route53 domain to already exist in AWS
 
+#Tested to work with Terraform .11.11 - version .12.2 does not work as written
+terraform {
+  required_version = "<= 0.12"
+}
 
 #Variables defined in terraform.tfvars
 variable "private_key_path" {}
@@ -14,26 +15,28 @@ variable "public_ip" {}
 
 
 variable "environment_tag" {
-  default = "prod"
+  description = "A descriptive tag which will be added to resources created by terraform"
+  default = "prod-portfolio"
 }
 
 variable "network_address_space" {
+  description = "The VPC CIDR address"
   default = "10.1.0.0/16"
 }
 
-#The maximum number of instances that the ASG will provision
 variable "max_instances" {
+  description = "The maximum number of instances that the ASG will provision"
   default = 4
 }
 
-#The minimum number of instances that the ASG will provision
 variable "min_instances" {
+  description = "The minimum number of instances that the ASG will provision"
   default = 2
 }
 
-#The number of subnets - each subnet will be placed into a different AZ
 #Note that this value cannot be greater than the number of AZs in the Region
 variable "subnet_count" {
+  description = "The number of subnets - each subnet will be placed into a different AZ"
   default = 2
 }
 
@@ -43,13 +46,14 @@ provider "aws" {
 }
 
 
-#The subdomain name for this site, will be appended to the apex domain specified below
+#DNS
 variable "dns_subdomain" {
+  description = "The subdomain name for this site, will be appended to the apex domain"
   default = "demo"
 }
 
-#The apex domain to publish the site under, this resource should already exist in Route53
 variable "dns_domain" {
+  description = "The apex domain to publish the site under, this resource should already exist in Route53"
   default = "davidpneal.com"
 }
 
@@ -78,7 +82,7 @@ module "dns" {
 
 #Security Group to control access to the load balancer
 resource "aws_security_group" "ALB-SG" {
-  name        = "ALB-SG"
+#  name        = "ALB-SG"
   vpc_id      = "${module.networking.vpc_id}"
 
   #HTTP access from anywhere
@@ -104,7 +108,7 @@ resource "aws_security_group" "ALB-SG" {
 }
 
 resource "aws_lb" "LoadBalancer" {
-  name               = "Website-ALB"
+  name               = "${var.environment_tag}-ALB"
   internal           = false
   load_balancer_type = "application"
   #Subnet_ids is a data structure that contains multiple id's
@@ -112,7 +116,7 @@ resource "aws_lb" "LoadBalancer" {
   security_groups    = ["${aws_security_group.ALB-SG.id}"]
 
   tags {
-    Name        = "${var.environment_tag}-alb"
+    Name        = "${var.environment_tag}-ALB"
     Environment = "${var.environment_tag}"
   }
 }
@@ -131,13 +135,13 @@ resource "aws_lb_listener" "FE-Listener" {
 
 #Create a Target Group to point the ALB to
 resource "aws_lb_target_group" "FE-TargetGroup" {
-  name     = "FE-TargetGroup"  
+  name     = "${var.environment_tag}-TargetGroup"  
   port     = "80"  
   protocol = "HTTP"  
   vpc_id   = "${module.networking.vpc_id}"
     
   tags {
-    Name        = "${var.environment_tag}-targetgroup"
+    Name        = "${var.environment_tag}-TargetGroup"
     Environment = "${var.environment_tag}"
   }  
  
@@ -163,7 +167,7 @@ resource "aws_autoscaling_attachment" "TG-ASG-Attach" {
 
 #Security Group to control access to the web server
 resource "aws_security_group" "WebServer-SG" {
-  name   = "WebServer-SG"
+#  name   = "WebServer-SG"
   vpc_id = "${module.networking.vpc_id}"
 
   #SSH access from a whitelisted address
@@ -198,7 +202,7 @@ resource "aws_security_group" "WebServer-SG" {
 
 #Define the Launch Configuration
 resource "aws_launch_configuration" "Launch-Config" {
-  name_prefix            = "Website-LC-" #TF documentation recc not using a name since the LC is recreated if changed
+  name_prefix            = "${var.environment_tag}-LC-" #TF documentation recc not using a name since the LC is recreated if changed
   image_id               = "ami-035be7bafff33b6b6" #This AMI is ok for the US-E1 Region
   instance_type          = "t2.micro"
   security_groups        = ["${aws_security_group.WebServer-SG.id}"]
@@ -214,7 +218,7 @@ resource "aws_launch_configuration" "Launch-Config" {
 
 #Create the AutoScaling Group
 resource "aws_autoscaling_group" "ASG" {
-  name                  = "WebServer-ASG"
+  name                  = "${var.environment_tag}-ASG"
   launch_configuration  = "${aws_launch_configuration.Launch-Config.id}"
   vpc_zone_identifier   = ["${module.networking.subnet_ids}"] #list of subnet IDs to launch resources into
   min_size              = "${var.min_instances}"
@@ -224,7 +228,7 @@ resource "aws_autoscaling_group" "ASG" {
   
   tag {
     key = "Name"
-    value = "${var.environment_tag}-ASG-WebServer"
+    value = "${var.environment_tag}-ASG-Instance"
     propagate_at_launch = true #Required so the ASG can propagate the tag to the EC2 instances it creates
   }
 }
