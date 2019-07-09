@@ -7,23 +7,39 @@ terraform {
   required_version = "<= 0.12"
 }
 
+#Set provider
+provider "aws" {
+  region = "us-east-1"
+}
+
+
+
 #Variables defined in terraform.tfvars
 variable "private_key_path" {}
 variable "keypair_name" {}
 variable "public_ip" {}
 
 
-
 variable "environment_tag" {
   description = "A descriptive tag which will be added to resources created by terraform"
-  default = "prod-portfolio"
+  default = "portfolio-prod"
 }
 
+
+#VPC Configuration
 variable "network_address_space" {
   description = "The VPC CIDR address"
   default = "10.1.0.0/16"
 }
 
+#Note that this value cannot be greater than the number of AZs in the Region
+variable "subnet_count" {
+  description = "The number of subnets - each subnet will be placed into a different AZ"
+  default = 2
+}
+
+
+#AutoScaling Group Configuration
 variable "max_instances" {
   description = "The maximum number of instances that the ASG will provision"
   default = 4
@@ -34,19 +50,8 @@ variable "min_instances" {
   default = 2
 }
 
-#Note that this value cannot be greater than the number of AZs in the Region
-variable "subnet_count" {
-  description = "The number of subnets - each subnet will be placed into a different AZ"
-  default = 2
-}
 
-#Set provider
-provider "aws" {
-  region = "us-east-1"
-}
-
-
-#DNS
+#DNS Configuration
 variable "dns_subdomain" {
   description = "The subdomain name for this site, will be appended to the apex domain"
   default = "demo"
@@ -59,6 +64,7 @@ variable "dns_domain" {
 
 
 
+#Modules
 module "networking" {
   source = "..\\..\\modules\\networking"
 
@@ -67,98 +73,21 @@ module "networking" {
   subnet_count          = "${var.subnet_count}"
 }
 
+module "alb" {
+  source = "..\\..\\modules\\alb"
+
+  environment_tag = "${var.environment_tag}"
+  vpc_id          = "${module.networking.vpc_id}"
+  subnet_ids      = ["${module.networking.subnet_ids}"]
+}
+
 module "dns" {
   source = "..\\..\\modules\\dns"
 
   dns_domain    = "${var.dns_domain}"
   dns_subdomain = "${var.dns_subdomain}"
-  lb_dns_name   = "${aws_lb.LoadBalancer.dns_name}"
-  lb_zone_id    = "${aws_lb.LoadBalancer.zone_id}"
-}
-
-
-
-#Application Load Balancer ##################################################################################
-
-#Security Group to control access to the load balancer
-resource "aws_security_group" "ALB-SG" {
-#  name        = "ALB-SG"
-  vpc_id      = "${module.networking.vpc_id}"
-
-  #HTTP access from anywhere
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  #Outbound access
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags {
-    Name        = "${var.environment_tag}-ALB-SG"
-    Environment = "${var.environment_tag}"
-  }
-}
-
-resource "aws_lb" "LoadBalancer" {
-  name               = "${var.environment_tag}-ALB"
-  internal           = false
-  load_balancer_type = "application"
-  #Subnet_ids is a data structure that contains multiple id's
-  subnets            = ["${module.networking.subnet_ids}"]
-  security_groups    = ["${aws_security_group.ALB-SG.id}"]
-
-  tags {
-    Name        = "${var.environment_tag}-ALB"
-    Environment = "${var.environment_tag}"
-  }
-}
-
-#Define a listener config for the ALB
-resource "aws_lb_listener" "FE-Listener" {
-  load_balancer_arn = "${aws_lb.LoadBalancer.arn}"
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = "${aws_lb_target_group.FE-TargetGroup.arn}"
-  }
-}
-
-#Create a Target Group to point the ALB to
-resource "aws_lb_target_group" "FE-TargetGroup" {
-  name     = "${var.environment_tag}-TargetGroup"  
-  port     = "80"  
-  protocol = "HTTP"  
-  vpc_id   = "${module.networking.vpc_id}"
-    
-  tags {
-    Name        = "${var.environment_tag}-TargetGroup"
-    Environment = "${var.environment_tag}"
-  }  
- 
-  health_check {    
-    healthy_threshold   = 2    
-    unhealthy_threshold = 3    
-    timeout             = 5    
-    interval            = 10    
-    path                = "/index.html"    
-    port                = "80"  
-  }
-}
-
-#Attach the Target Group to the Autoscaling Group
-resource "aws_autoscaling_attachment" "TG-ASG-Attach" {
-  alb_target_group_arn   = "${aws_lb_target_group.FE-TargetGroup.arn}"
-  autoscaling_group_name = "${aws_autoscaling_group.ASG.id}"
+  lb_dns_name   = "${module.alb.dns_name}"
+  lb_zone_id    = "${module.alb.zone_id}"
 }
 
 
@@ -167,7 +96,6 @@ resource "aws_autoscaling_attachment" "TG-ASG-Attach" {
 
 #Security Group to control access to the web server
 resource "aws_security_group" "WebServer-SG" {
-#  name   = "WebServer-SG"
   vpc_id = "${module.networking.vpc_id}"
 
   #SSH access from a whitelisted address
@@ -287,4 +215,10 @@ resource "aws_cloudwatch_metric_alarm" "Scale-Down-Alarm" {
 
   alarm_description = "EC2 Low CPU Utilization"
   alarm_actions     = ["${aws_autoscaling_policy.Scale-Down.arn}"]
+}
+
+#Attach the Target Group to the Autoscaling Group
+resource "aws_autoscaling_attachment" "TG-ASG-Attach" {
+  alb_target_group_arn   = "${module.alb.arn}"
+  autoscaling_group_name = "${aws_autoscaling_group.ASG.id}"
 }
