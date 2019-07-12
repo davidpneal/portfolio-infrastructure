@@ -1,4 +1,4 @@
-#7/9/2019
+#7/11/2019
 
 variable "environment_tag" {
   description = "A descriptive tag which will be added to resources created by terraform"
@@ -20,7 +20,6 @@ variable "lb_target_group_arn" {
   default     = ""
 }
 
-
 variable "min_instances" {
   description = "The minimum number of instances that the ASG will provision"
   default     = ""
@@ -33,20 +32,20 @@ variable "max_instances" {
 
 variable "image_id" {
   description = "The EC2 AMI to use in the launch configuration"
-  default = ""
+  default     = ""
 }
 
 variable "instance_type" {
   description = "The type of compute instance to use"
-  default = ""
+  default     = ""
 }
 
 variable "public_ip" {
   description = "A list of whitelisted addresses which are allowed SSH access to the instances"
-  default = ""
+  default     = ""
 }
 
 variable "keypair_name" {
   description = "The name of the keypair in AWS used for SSH access"
-  default = ""
+  default     = ""
 }
