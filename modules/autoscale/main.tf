@@ -50,7 +50,7 @@ resource "aws_launch_configuration" "Launch-Config" {
 
   #User data takes the bootstrap script - documentation indicates this can be a cloud-init script or a standard shell script
   #This relative path is evaluated as if it were run from the root module folder
-  user_data = file("..\\webserver-init.sh")
+  user_data = file("..\\..\\configuration\\webserver-init.sh")
 
   lifecycle {
     create_before_destroy = true #If changed, create the new LC before destroying the old one
